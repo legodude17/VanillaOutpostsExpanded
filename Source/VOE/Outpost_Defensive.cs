@@ -21,7 +21,13 @@ namespace VOE
 
         [PostToSetings("Outposts.Settings.NeedPods", PostToSetingsAttribute.DrawMode.Checkbox, true)]
         public bool NeedPods = true;
+        //Adding this to balance things a bit. I assume they get their own steel, but fuel could be a bit hard to get.
+        [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.Checkbox, true)]
+        public bool NeedFuel = true;
+        [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.IntSlider,100,min:0, max:200)]
+        public int FuelAmount = 100;
 
+        public Faction raidFaction;
         static Outpost_Defensive()
         {
             if (OutpostsMod.Outposts.Any(outpost => typeof(Outpost_Defensive).IsAssignableFrom(outpost.worldObjectClass)))
@@ -51,17 +57,14 @@ namespace VOE
                 t => !Find.WorldObjects.AnyMapParentAt(t) && Find.WorldGrid.ApproxDistanceInTiles(defense.Tile, t) <= 7f)) tile = defense.Tile;
             LongEventHandler.QueueLongEvent(() =>
             {
+                defense.raidFaction = parms.faction;
                 var map = GetOrGenerateMapUtility.GetOrGenerateMap(tile, new IntVec3(75, 1, 75), DefDatabase<WorldObjectDef>.GetNamed("VOE_AmbushedRaid"));
                 parms.target = map;
                 parms.points = StorytellerUtility.DefaultThreatPointsNow(map);
-                generateFaction(__instance, parms);
-                if (map.Parent is AmbushedRaid ambushedRaid)
-                {
-                    ambushedRaid.DefensiveOutpost = defense;
-                    ambushedRaid.raidFaction = parms.faction;
-                }
-                var pawns = defense.AllPawns.Where(x=>!x.IsPrisonerOfColony).InRandomOrder().Skip(1).ToList();
-                var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms, ensureCanGenerateAtLeastOnePawn: true);
+                generateFaction(__instance, parms);                
+                if (map.Parent is AmbushedRaid ambushedRaid) ambushedRaid.DefensiveOutpost = defense;
+                var pawns = defense.AllPawns.InRandomOrder().Skip(1).ToList();
+                var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms);
                 defaultPawnGroupMakerParms.generateFightersOnly = true;
                 defaultPawnGroupMakerParms.dontUseSingleUseRocketLaunchers = true;
                 var enemies = PawnGroupMakerUtility.GeneratePawns(defaultPawnGroupMakerParms).ToList();
@@ -97,8 +100,21 @@ namespace VOE
                                 pods.SetFaction(Faction);
                                 pods.destinationTile = target.Tile;
                                 pods.arrivalAction = new TransportPodsArrivalAction_LandInSpecificCell(parent, localTarget.Cell, false);
-                                //Change so it doesnt drop pod random farm animals. Also so it always leaves behind an actual colonist (it left behind just a camel that I'm sure if a raid triggered would explode things)
-                                foreach (var pawn in AllPawns.Where(x => x.RaceProps.trainability != TrainabilityDefOf.None).OrderByDescending(x => x.IsColonist).Skip(1).ToList())
+                                //fuel
+                                if (NeedFuel)
+                                {
+                                    Thing fuel = Things.FirstOrDefault(x => x.def == ThingDefOf.Chemfuel);
+                                    if(fuel != null)
+                                    {
+                                        fuel.stackCount = FuelAmount;
+                                       TakeItem(fuel);
+                                    }
+                                    
+                                }
+                                //Leave a human pawn rather then random which can be animals as pretty sure that'd cause issues
+                                RemovePawn(AllPawns.Where(x => x.RaceProps.Humanlike).RandomElement());
+                                //Trainability is because my poor drop camels landing with the melee pawns on the enemey. Poor things :'(. But now I also want to droppod a bunch of nasty genetic creations to save me
+                                foreach (var pawn in AllPawns.Where(x=>x.RaceProps.trainability != TrainabilityDefOf.None).ToList())
                                 {
                                     var info = new ActiveDropPodInfo
                                     {
@@ -126,7 +142,11 @@ namespace VOE
                 icon = TexDefensive.DeployTex
             });
         }
-
+        public override void ExposeData()
+        {
+            base.ExposeData();
+            Scribe_References.Look(ref raidFaction, "raidFaction");
+        }
         private bool ReinforcementsDisabled(out string reason)
         {
             if (NeedPods && !Outposts_DefOf.TransportPod.IsFinished)
@@ -134,7 +154,21 @@ namespace VOE
                 reason = "Outposts.Commands.Deploy.Disabled".Translate();
                 return true;
             }
-
+            if (NeedFuel)
+            {
+                if (Things.Sum(delegate(Thing x)
+                {
+                    if (x.def == ThingDefOf.Chemfuel)
+                    {
+                        return x.stackCount;
+                    }
+                    return 0;
+                }) < FuelAmount)
+                {
+                    reason = "Need Fuel".Translate();
+                    return true;
+                }
+            }
             if (PawnCount < 2)
             {
                 reason = "Outposts.Commands.Deploy.Only1".Translate();
@@ -149,7 +183,6 @@ namespace VOE
     public class AmbushedRaid : MapParent
     {
         public Outpost_Defensive DefensiveOutpost;
-        public Faction raidFaction;
 
         public override bool ShouldRemoveMapNow(out bool alsoRemoveWorldObject)
         {
@@ -161,7 +194,7 @@ namespace VOE
                 return true;
             }
 
-            if (Map.mapPawns.AllPawns.Where(p => p.RaceProps.Humanlike || p.Faction == raidFaction).All(p => p.Faction is { IsPlayer: true } || p.HostFaction is { IsPlayer: true}))
+            if (Map.mapPawns.AllPawns.Where(p => p.RaceProps.Humanlike || p.Faction == DefensiveOutpost.raidFaction).All(p => p.Faction is {IsPlayer: true}))
             {
                 Find.LetterStack.ReceiveLetter("Outposts.Defensive.Won.Label".Translate(), "Outposts.Defensive.Won.Desc".Translate(),
                     LetterDefOf.PositiveEvent);
@@ -171,7 +204,7 @@ namespace VOE
                     pawn.DeSpawn();
                     DefensiveOutpost.AddPawn(pawn);
                 }
-                raidFaction = null;
+
                 alsoRemoveWorldObject = true;
                 return true;
             }
@@ -184,7 +217,7 @@ namespace VOE
         {
             base.ExposeData();
             Scribe_References.Look(ref DefensiveOutpost, "defensiveOutpost");
-            Scribe_References.Look(ref raidFaction, "raidFaction");
+            
         }
     }
 
