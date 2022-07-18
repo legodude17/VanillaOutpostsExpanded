@@ -24,10 +24,9 @@ namespace VOE
         //Adding this to balance things a bit. I assume they get their own steel, but fuel could be a bit hard to get.
         [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.Checkbox, true)]
         public bool NeedFuel = true;
-        [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.IntSlider,100,min:0, max:200)]
+        [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.IntSlider,100,min:1, max:200)]
         public int FuelAmount = 100;
 
-        public Faction raidFaction;
         static Outpost_Defensive()
         {
             if (OutpostsMod.Outposts.Any(outpost => typeof(Outpost_Defensive).IsAssignableFrom(outpost.worldObjectClass)))
@@ -56,13 +55,16 @@ namespace VOE
             if (!TileFinder.TryFindPassableTileWithTraversalDistance(targetMap.Tile, 2, 5, out var tile,
                 t => !Find.WorldObjects.AnyMapParentAt(t) && Find.WorldGrid.ApproxDistanceInTiles(defense.Tile, t) <= 7f)) tile = defense.Tile;
             LongEventHandler.QueueLongEvent(() =>
-            {
-                defense.raidFaction = parms.faction;
+            {                
                 var map = GetOrGenerateMapUtility.GetOrGenerateMap(tile, new IntVec3(75, 1, 75), DefDatabase<WorldObjectDef>.GetNamed("VOE_AmbushedRaid"));
                 parms.target = map;
                 parms.points = StorytellerUtility.DefaultThreatPointsNow(map);
                 generateFaction(__instance, parms);                
-                if (map.Parent is AmbushedRaid ambushedRaid) ambushedRaid.DefensiveOutpost = defense;
+                if (map.Parent is AmbushedRaid ambushedRaid)
+                {
+                    ambushedRaid.DefensiveOutpost = defense;
+                    ambushedRaid.raidFaction = parms.faction;
+                }
                 var pawns = defense.AllPawns.InRandomOrder().Skip(1).ToList();
                 var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms);
                 defaultPawnGroupMakerParms.generateFightersOnly = true;
@@ -100,21 +102,31 @@ namespace VOE
                                 pods.SetFaction(Faction);
                                 pods.destinationTile = target.Tile;
                                 pods.arrivalAction = new TransportPodsArrivalAction_LandInSpecificCell(parent, localTarget.Cell, false);
-                                //fuel
                                 if (NeedFuel)
-                                {
-                                    Thing fuel = Things.FirstOrDefault(x => x.def == ThingDefOf.Chemfuel);
-                                    if(fuel != null)
+                                {//probably a better way to do this but whatever
+                                    int fuelToTake = FuelAmount;
+                                    foreach (Thing fuel in Things.ToList())
                                     {
-                                        fuel.stackCount = FuelAmount;
-                                       TakeItem(fuel);
-                                    }
+                                        if (fuel.def == ThingDefOf.Chemfuel)
+                                        {
+                                            if (fuelToTake < fuel.stackCount)
+                                            {
+                                                fuelToTake = 0;
+                                                fuel.SplitOff(fuelToTake);
+                                            }
+                                            else
+                                            {
+                                                fuelToTake =- fuel.stackCount;
+                                                TakeItem(fuel);
+                                            }
+                                        }
+                                        if(fuelToTake == 0) { break; }
+                                    }        
                                     
                                 }
-                                //Leave a human pawn rather then random which can be animals as pretty sure that'd cause issues
-                                RemovePawn(AllPawns.Where(x => x.RaceProps.Humanlike).RandomElement());
                                 //Trainability is because my poor drop camels landing with the melee pawns on the enemey. Poor things :'(. But now I also want to droppod a bunch of nasty genetic creations to save me
-                                foreach (var pawn in AllPawns.Where(x=>x.RaceProps.trainability != TrainabilityDefOf.None).ToList())
+                                //orderyby to leave a human pawn rather then random which can be animals as pretty sure that'd cause issues
+                                foreach (var pawn in AllPawns.Where(x=>x.RaceProps.trainability != TrainabilityDefOf.None).OrderByDescending(x=>x.RaceProps.Humanlike).Skip(1).ToList())
                                 {
                                     var info = new ActiveDropPodInfo
                                     {
@@ -183,7 +195,7 @@ namespace VOE
     public class AmbushedRaid : MapParent
     {
         public Outpost_Defensive DefensiveOutpost;
-
+        public Faction raidFaction;
         public override bool ShouldRemoveMapNow(out bool alsoRemoveWorldObject)
         {
             if (!Map.mapPawns.FreeColonists.Any())
@@ -193,8 +205,7 @@ namespace VOE
                 alsoRemoveWorldObject = true;
                 return true;
             }
-
-            if (Map.mapPawns.AllPawns.Where(p => p.RaceProps.Humanlike || p.Faction == DefensiveOutpost.raidFaction).All(p => p.Faction is {IsPlayer: true}))
+            if (Map.mapPawns.AllPawns.Where(p => p.RaceProps.Humanlike || p.Faction == raidFaction).All(p => p.Faction is {IsPlayer: true}))
             {
                 Find.LetterStack.ReceiveLetter("Outposts.Defensive.Won.Label".Translate(), "Outposts.Defensive.Won.Desc".Translate(),
                     LetterDefOf.PositiveEvent);
@@ -204,11 +215,11 @@ namespace VOE
                     pawn.DeSpawn();
                     DefensiveOutpost.AddPawn(pawn);
                 }
-
+                raidFaction = null;
                 alsoRemoveWorldObject = true;
                 return true;
             }
-
+            
             alsoRemoveWorldObject = false;
             return false;
         }
