@@ -24,7 +24,7 @@ namespace VOE
         //Adding this to balance things a bit. I assume they get their own steel, but fuel could be a bit hard to get.
         [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.Checkbox, true)]
         public bool NeedFuel = true;
-        [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.IntSlider,100,min:1, max:200)]
+        [PostToSetings("Outposts.Settings.NeedFuelAmount", PostToSetingsAttribute.DrawMode.IntSlider,100,min:1, max:500)]
         public int FuelAmount = 100;
 
         static Outpost_Defensive()
@@ -60,14 +60,16 @@ namespace VOE
                 parms.target = map;
                 defense.Debug(parms, 0.5f, 0.5f);
                 parms.points = defense.ResolveRaidPoints(parms,0.35f,0.50f);
-                generateFaction(__instance, parms);                
+                generateFaction(__instance, parms);               
+
+                var pawns = defense.AllPawns.Where(x => !x.IsPrisonerOfColony).InRandomOrder().Skip(1).ToList();
+                var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms,true);
                 if (map.Parent is AmbushedRaid ambushedRaid)
                 {
                     ambushedRaid.DefensiveOutpost = defense;
                     ambushedRaid.raidFaction = parms.faction;
+                    ambushedRaid.raidPoints = parms.points;
                 }
-                var pawns = defense.AllPawns.InRandomOrder().Skip(1).ToList();
-                var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms);
                 defaultPawnGroupMakerParms.generateFightersOnly = true;
                 defaultPawnGroupMakerParms.dontUseSingleUseRocketLaunchers = true;
                 var enemies = PawnGroupMakerUtility.GeneratePawns(defaultPawnGroupMakerParms).ToList();
@@ -127,7 +129,7 @@ namespace VOE
                                 }
                                 //Trainability is because my poor drop camels landing with the melee pawns on the enemey. Poor things :'(. But now I also want to droppod a bunch of nasty genetic creations to save me
                                 //orderyby to leave a human pawn rather then random which can be animals as pretty sure that'd cause issues
-                                foreach (var pawn in AllPawns.Where(x=>x.RaceProps.trainability != TrainabilityDefOf.None).OrderByDescending(x=>x.RaceProps.Humanlike).Skip(1).ToList())
+                                foreach (var pawn in AllPawns.Where(x=>x.RaceProps.trainability != TrainabilityDefOf.None).OrderByDescending(x=>x.IsColonist).Skip(1).ToList())
                                 {
                                     var info = new ActiveDropPodInfo
                                     {
@@ -155,11 +157,6 @@ namespace VOE
                 icon = TexDefensive.DeployTex
             });
         }
-        public override void ExposeData()
-        {
-            base.ExposeData();
-            Scribe_References.Look(ref raidFaction, "raidFaction");
-        }
         private bool ReinforcementsDisabled(out string reason)
         {
             if (NeedPods && !Outposts_DefOf.TransportPod.IsFinished)
@@ -178,7 +175,7 @@ namespace VOE
                     return 0;
                 }) < FuelAmount)
                 {
-                    reason = "Need Fuel".Translate();
+                    reason = "Outposts.Commands.Deploy.NotEnoughFuel".Translate();
                     return true;
                 }
             }
@@ -197,6 +194,7 @@ namespace VOE
     {
         public Outpost_Defensive DefensiveOutpost;
         public Faction raidFaction;
+        public float raidPoints;
         public override bool ShouldRemoveMapNow(out bool alsoRemoveWorldObject)
         {
             if (!Map.mapPawns.FreeColonists.Any())
@@ -206,18 +204,20 @@ namespace VOE
                 alsoRemoveWorldObject = true;
                 return true;
             }
-            if (Map.mapPawns.AllPawns.Where(p => p.RaceProps.Humanlike || p.Faction == raidFaction).All(p => p.Faction is {IsPlayer: true}))
+            if (Map.mapPawns.AllPawns.Where(p => p.RaceProps.Humanlike || p.Faction == raidFaction).All(p => p.Faction is {IsPlayer: true} || p.HostFaction is { IsPlayer: true }))
             {
-                Find.LetterStack.ReceiveLetter("Outposts.Defensive.Won.Label".Translate(), "Outposts.Defensive.Won.Desc".Translate(),
-                    LetterDefOf.PositiveEvent);
+                
                 List<Pawn> mapPawns = Map.PlayerPawnsForStoryteller.ToList();
                 foreach (var pawn in mapPawns)
                 {
                     pawn.DeSpawn();
                     DefensiveOutpost.AddPawn(pawn);
                 }
-                DefensiveOutpost.AddLoot();
+                DefensiveOutpost.AddLoot(raidFaction, raidPoints,Map,out var loot);
+                Find.LetterStack.ReceiveLetter("Outposts.Defensive.Won.Label".Translate(), "Outposts.Defensive.Won.Desc".Translate(loot),
+                    LetterDefOf.PositiveEvent);
                 raidFaction = null;
+                raidPoints = 0;
                 alsoRemoveWorldObject = true;
                 return true;
             }
