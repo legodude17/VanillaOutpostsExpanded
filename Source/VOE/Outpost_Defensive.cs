@@ -58,7 +58,8 @@ namespace VOE
             {                
                 var map = GetOrGenerateMapUtility.GetOrGenerateMap(tile, new IntVec3(75, 1, 75), DefDatabase<WorldObjectDef>.GetNamed("VOE_AmbushedRaid"));
                 parms.target = map;
-                parms.points = StorytellerUtility.DefaultThreatPointsNow(map);
+                defense.Debug(parms, 0.5f, 0.5f);
+                parms.points = defense.ResolveRaidPoints(parms,0.35f,0.50f);
                 generateFaction(__instance, parms);                
                 if (map.Parent is AmbushedRaid ambushedRaid)
                 {
