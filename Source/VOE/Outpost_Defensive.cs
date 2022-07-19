@@ -216,6 +216,7 @@ namespace VOE
                     pawn.DeSpawn();
                     DefensiveOutpost.AddPawn(pawn);
                 }
+                DefensiveOutpost.AddLoot();
                 raidFaction = null;
                 alsoRemoveWorldObject = true;
                 return true;
@@ -229,7 +230,7 @@ namespace VOE
         {
             base.ExposeData();
             Scribe_References.Look(ref DefensiveOutpost, "defensiveOutpost");
-            
+            Scribe_References.Look(ref raidFaction, "raidFaction");
         }
     }
 
