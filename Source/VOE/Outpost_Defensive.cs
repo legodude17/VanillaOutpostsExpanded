@@ -27,6 +27,8 @@ namespace VOE
         [PostToSetings("Outposts.Settings.NeedFuelAmount", PostToSetingsAttribute.DrawMode.IntSlider,100,min:1, max:500)]
         public int FuelAmount = 100;
 
+        public static bool DoRaid = false;
+
         static Outpost_Defensive()
         {
             if (OutpostsMod.Outposts.Any(outpost => typeof(Outpost_Defensive).IsAssignableFrom(outpost.worldObjectClass)))
@@ -41,54 +43,98 @@ namespace VOE
             pawns.Where(p => p.RaceProps.Humanlike).Any(p => p.WorkTagIsDisabled(WorkTags.Violent) || p.equipment.Primary is null)
                 ? "Outposts.MustBeArmed".Translate()
                 : null;
+        public override float ResolveRaidPoints(IncidentParms parms, float rangeMin = 0.45F, float rangeMax = 0.65F) //Defense gets turrets sandbags and is where combat pawns go
+        {
+            return base.ResolveRaidPoints(parms, rangeMin, rangeMax);
+        }
 
         public static string RequirementsString(int tile, List<Pawn> pawns) =>
             "Outposts.MustBeArmed".Translate().Requirement(
                 pawns.Where(p => p.RaceProps.Humanlike).All(p => !p.WorkTagIsDisabled(WorkTags.Violent) && p.equipment.Primary is not null));
+        
 
         public static bool UpdateRaidTarget(IncidentParms parms, IncidentWorker_RaidEnemy __instance)
         {
             var defense = Find.WorldObjects.AllWorldObjects.OfType<Outpost_Defensive>().Where(outpost => outpost.PawnCount > 1).InRandomOrder()
-                .FirstOrDefault(d => d.DoIntercept && Rand.Chance(0.25f));
+                .FirstOrDefault(d => d.DoIntercept && Rand.Chance(0.25f) && !DoRaid);
             if (defense == null) return true;
             if (parms.target is not Map targetMap) return true;
+            generateFaction(__instance, parms);
+            defense.CanIntercept(parms, __instance);
+            return false;
+        }
+        //To make the intercept raids as strong as I think they should be. I figured it also wouldnt be fair to throw ppls pawns to a meat grinder unprepared. 
+        //So made it a player choice cause there is just no way to estimate it on my side
+        public void CanIntercept(IncidentParms parms, IncidentWorker_RaidEnemy raid)
+        {
+            float parmPoints = parms.points;//storing this because I want to generate with estimated points then set it back
+            parms.points = ResolveRaidPoints(parms, 0.75f, 1.00f);
+            var groupParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms, true);
+            groupParms.generateFightersOnly = true;
+            groupParms.dontUseSingleUseRocketLaunchers = true;
+            //I dont want to generate the pawns just to pass to world if declined confusing things so just using example. Hence text will say estimate
+            var enemies = PawnGroupMakerUtility.GeneratePawnKindsExample(groupParms).ToList(); 
+
+            CameraJumper.TryJumpAndSelect(this);
+            DiaNode nodeRoot = new DiaNode("Outposts.Intercept.CanIntercept".Translate(Name, parms.faction.Name, parms.target.ChangeType<Map>().Parent.LabelCap, PawnUtility.PawnKindsToLineList(enemies, "  - ")));
+            var intercept = new DiaOption("Outposts.Intercept.InterceptRaid".Translate());
+            intercept.action = delegate () { StartIntercept(parms, raid); };
+            intercept.resolveTree = true;
+            nodeRoot.options.Add(intercept);
+            var decline = new DiaOption("Outposts.Intercept.DontIntercept".Translate());
+            decline.action = delegate () {
+                parms.points = parmPoints;
+                DeclineIntercept(parms, raid);
+            };
+            decline.resolveTree = true;
+            nodeRoot.options.Add(decline);
+            var title = "Outposts.Intercept.Title".Translate(parms.faction.Name);
+            Find.WindowStack.Add(new Dialog_NodeTreeWithFactionInfo(nodeRoot, parms.faction, true, false, title));
+        }
+        private void StartIntercept(IncidentParms parms, IncidentWorker_RaidEnemy raid)
+        {
+            var targetMap = parms.target as Map;
             if (!TileFinder.TryFindPassableTileWithTraversalDistance(targetMap.Tile, 2, 5, out var tile,
-                t => !Find.WorldObjects.AnyMapParentAt(t) && Find.WorldGrid.ApproxDistanceInTiles(defense.Tile, t) <= 7f)) tile = defense.Tile;
+            t => !Find.WorldObjects.AnyMapParentAt(t) && Find.WorldGrid.ApproxDistanceInTiles(Tile, t) <= 7f)) tile = Tile;
             LongEventHandler.QueueLongEvent(() =>
-            {                
+            {
                 var map = GetOrGenerateMapUtility.GetOrGenerateMap(tile, new IntVec3(75, 1, 75), DefDatabase<WorldObjectDef>.GetNamed("VOE_AmbushedRaid"));
                 parms.target = map;
-                defense.Debug(parms, 0.5f, 0.5f);
-                parms.points = defense.ResolveRaidPoints(parms,0.35f,0.50f);
-                generateFaction(__instance, parms);               
 
-                var pawns = defense.AllPawns.Where(x => !x.IsPrisonerOfColony).InRandomOrder().Skip(1).ToList();
-                var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms,true);
+                var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms, true);
                 if (map.Parent is AmbushedRaid ambushedRaid)
                 {
-                    ambushedRaid.DefensiveOutpost = defense;
+                    ambushedRaid.DefensiveOutpost = this;
                     ambushedRaid.raidFaction = parms.faction;
                     ambushedRaid.raidPoints = parms.points;
                 }
                 defaultPawnGroupMakerParms.generateFightersOnly = true;
                 defaultPawnGroupMakerParms.dontUseSingleUseRocketLaunchers = true;
+
                 var enemies = PawnGroupMakerUtility.GeneratePawns(defaultPawnGroupMakerParms).ToList();
                 MultipleCaravansCellFinder.FindStartingCellsFor2Groups(map, out var playerSpot, out var enemySpot);
-                foreach (var pawn in pawns) GenSpawn.Spawn(defense.RemovePawn(pawn), CellFinder.RandomSpawnCellForPawnNear(playerSpot, map), map, Rot4.Random);
+                var pawns = AllPawns.Where(x => !x.IsPrisonerOfColony).InRandomOrder().Skip(1).ToList();
+                foreach (var pawn in pawns) GenSpawn.Spawn(RemovePawn(pawn), CellFinder.RandomSpawnCellForPawnNear(playerSpot, map), map, Rot4.Random);
                 foreach (var enemy in enemies) GenSpawn.Spawn(enemy, CellFinder.RandomSpawnCellForPawnNear(enemySpot, map), map, Rot4.Random);
                 var lordJob = new LordJob_AssaultColony(parms.faction, true, false);
                 LordMaker.MakeNewLord(parms.faction, lordJob, map, enemies);
                 var letterLabel = "Outposts.Letters.Intercept.Label".Translate();
-                var letterText = "Outposts.Letters.Intercept.Text".Translate(targetMap.Parent.LabelCap, defense.Name);
+                var letterText = "Outposts.Letters.Intercept.Text".Translate(targetMap.Parent.LabelCap, Name);
                 PawnRelationUtility.Notify_PawnsSeenByPlayer_Letter(enemies, ref letterLabel, ref letterText,
                     "LetterRelatedPawnsGroupGeneric".Translate(Faction.OfPlayer.def.pawnsPlural), true);
                 Find.LetterStack.ReceiveLetter(letterLabel, letterText, LetterDefOf.PositiveEvent,
-                    new LookTargets(new List<GlobalTargetInfo> {defense, map.Parent}));
+                    new LookTargets(new List<GlobalTargetInfo> { this, map.Parent }));
                 Find.TickManager.Notify_GeneratedPotentiallyHostileMap();
             }, "GeneratingMapForNewEncounter", false, null, false);
-            return false;
         }
-
+        private void DeclineIntercept(IncidentParms parms, IncidentWorker_RaidEnemy raid)
+        {
+            DoRaid = true;
+            if (raid.TryExecute(parms))
+            {
+                DoRaid = false;
+            }
+        }
         public override IEnumerable<Gizmo> GetGizmos()
         {
             return base.GetGizmos().Append(new Command_Action
