@@ -22,7 +22,7 @@ namespace VOE
         [PostToSetings("Outposts.Settings.NeedPods", PostToSetingsAttribute.DrawMode.Checkbox, true)]
         public bool NeedPods = true;
         //Adding this to balance things a bit. I assume they get their own steel, but fuel could be a bit hard to get.
-        [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.Checkbox, true)]
+        [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.Checkbox, false)]
         public bool NeedFuel = true;
         [PostToSetings("Outposts.Settings.NeedFuelAmount", PostToSetingsAttribute.DrawMode.IntSlider,100,min:1, max:500)]
         public int FuelAmount = 100;
@@ -277,6 +277,7 @@ namespace VOE
             base.ExposeData();
             Scribe_References.Look(ref DefensiveOutpost, "defensiveOutpost");
             Scribe_References.Look(ref raidFaction, "raidFaction");
+            Scribe_Values.Look(ref raidPoints, "raidPoints");
         }
     }
 
