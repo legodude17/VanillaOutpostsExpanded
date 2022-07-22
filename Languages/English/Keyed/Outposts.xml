@@ -21,7 +21,7 @@
     <Outposts.Letters.Intercept.Label>Raid Intercepted</Outposts.Letters.Intercept.Label>
     <Outposts.Letters.Intercept.Text>A raid bound for {0} has been intercepted by the defensive outpost {1}. Hopefully they can survive this brave maneuver.</Outposts.Letters.Intercept.Text>
 	<Outposts.Intercept.Title>Outpost Intercept Raid</Outposts.Intercept.Title>
-	<Outposts.Intercept.CanIntercept>Defenders at {0} have detected a raid from {1} heading towards {2}! \n\nThey are in position to ambush part of the raiding force, that if successful should cause the rest to scatter and return. They are looks composed of: \n{3}</Outposts.Intercept.CanIntercept>
+	<Outposts.Intercept.CanIntercept>Defenders at {0} have detected a raid from {1} heading towards {2}! \n\nThey are in position to ambush part of the raiding force, that if successful should cause the rest to scatter and return. They estimate the force they will fight is composed of: \n{3}</Outposts.Intercept.CanIntercept>
 	<Outposts.Intercept.InterceptRaid>Maneuver and intercept the raiders</Outposts.Intercept.InterceptRaid>
 	<Outposts.Intercept.DontIntercept>Stand down, and return to the outpost</Outposts.Intercept.DontIntercept>
     <Outposts.Commands.Deploy.Label>Send Reinforcements</Outposts.Commands.Deploy.Label>
