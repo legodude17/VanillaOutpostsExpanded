@@ -10,7 +10,7 @@
     <Outposts.Settings.Meat>Meat Multiplier</Outposts.Settings.Meat>
     <Outposts.Settings.DoIntercept>Intercept Incoming Raids?</Outposts.Settings.DoIntercept>
 	<Outposts.Settings.InterceptDifficultyMultiplier>Intercept Difficulty Multiplier</Outposts.Settings.InterceptDifficultyMultiplier>
-	<Outposts.Settings.InterceptDifficultyMultiplierTooltip>This is in on top of your global difficulty modifier and intercept is already harder then regular defense raids. Adjust upwards are your own risk</Outposts.Settings.InterceptDifficultyMultiplierTooltip>
+	<Outposts.Settings.InterceptDifficultyMultiplierTooltip>This is in on top of your global difficulty modifier and intercept is already harder then regular defense raids. Adjust upwards at your own risk</Outposts.Settings.InterceptDifficultyMultiplierTooltip>
     <Outposts.Settings.Chance>Recruit chance Multiplier</Outposts.Settings.Chance>
 	<Outposts.Settings.NeedFuel>Drop Pods Require Fuel</Outposts.Settings.NeedFuel>
 	<Outposts.Settings.NeedFuelAmount>Amount of Fuel</Outposts.Settings.NeedFuelAmount>

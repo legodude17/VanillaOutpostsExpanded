@@ -62,7 +62,7 @@ namespace VOE
                 .FirstOrDefault(d => d.DoIntercept && Rand.Chance(0.25f) && !DoRaid);
             if (defense == null) return true;
             if (parms.target is not Map targetMap) return true;
-            generateFaction(__instance, parms);
+            if(!generateFaction(__instance, parms)) return true;
             defense.CanIntercept(parms, __instance);
             return false;
         }
@@ -76,8 +76,8 @@ namespace VOE
             groupParms.generateFightersOnly = true;
             groupParms.dontUseSingleUseRocketLaunchers = true;
             //I dont want to generate the pawns just to pass to world if declined confusing things so just using example. Hence text will say estimate
-            var enemies = PawnGroupMakerUtility.GeneratePawnKindsExample(groupParms).ToList(); 
-
+            var enemies = PawnGroupMakerUtility.GeneratePawnKindsExample(groupParms).ToList();
+            if (!enemies.Any()) { return; }
             CameraJumper.TryJumpAndSelect(this);
             DiaNode nodeRoot = new DiaNode("Outposts.Intercept.CanIntercept".Translate(Name, parms.faction.Name, parms.target.ChangeType<Map>().Parent.LabelCap, PawnUtility.PawnKindsToLineList(enemies, "  - ")));
             var intercept = new DiaOption("Outposts.Intercept.InterceptRaid".Translate());
@@ -103,7 +103,7 @@ namespace VOE
             {
                 var map = GetOrGenerateMapUtility.GetOrGenerateMap(tile, new IntVec3(75, 1, 75), DefDatabase<WorldObjectDef>.GetNamed("VOE_AmbushedRaid"));
                 parms.target = map;
-
+                
                 var defaultPawnGroupMakerParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms, true);
                 if (map.Parent is AmbushedRaid ambushedRaid)
                 {
@@ -113,7 +113,7 @@ namespace VOE
                 }
                 defaultPawnGroupMakerParms.generateFightersOnly = true;
                 defaultPawnGroupMakerParms.dontUseSingleUseRocketLaunchers = true;
-
+                //Came across a minor bug here.Certian modded factions wont pass these validators. (VFEI insectoids is one but also only sometimes...?). It will eventually generate just produces 2 errors. Fixing it is pretty complicated and it doesnt actually hurt anything so dont think its a big deal
                 var enemies = PawnGroupMakerUtility.GeneratePawns(defaultPawnGroupMakerParms).ToList();
                 MultipleCaravansCellFinder.FindStartingCellsFor2Groups(map, out var playerSpot, out var enemySpot);
                 var pawns = AllPawns.Where(x => !x.IsPrisonerOfColony).InRandomOrder().Skip(1).ToList();
@@ -133,10 +133,8 @@ namespace VOE
         private void DeclineIntercept(IncidentParms parms, IncidentWorker_RaidEnemy raid)
         {
             DoRaid = true;
-            if (raid.TryExecute(parms))
-            {
-                DoRaid = false;
-            }
+            raid.TryExecute(parms);            
+            DoRaid = false;            
         }
         public override IEnumerable<Gizmo> GetGizmos()
         {
@@ -155,26 +153,8 @@ namespace VOE
                                 pods.destinationTile = target.Tile;
                                 pods.arrivalAction = new TransportPodsArrivalAction_LandInSpecificCell(parent, localTarget.Cell, false);
                                 if (NeedFuel)
-                                {//probably a better way to do this but whatever
-                                    int fuelToTake = FuelAmount;
-                                    foreach (Thing fuel in Things.ToList())
-                                    {
-                                        if (fuel.def == ThingDefOf.Chemfuel)
-                                        {
-                                            if (fuelToTake < fuel.stackCount)
-                                            {
-                                                fuelToTake = 0;
-                                                fuel.SplitOff(fuelToTake);
-                                            }
-                                            else
-                                            {
-                                                fuelToTake =- fuel.stackCount;
-                                                TakeItem(fuel);
-                                            }
-                                        }
-                                        if(fuelToTake == 0) { break; }
-                                    }        
-                                    
+                                {
+                                    foreach(var fuel in TakeItems(ThingDefOf.Chemfuel, FuelAmount)) fuel.Destroy();                                    
                                 }
                                 //Trainability is because my poor drop camels landing with the melee pawns on the enemey. Poor things :'(. But now I also want to droppod a bunch of nasty genetic creations to save me
                                 //orderyby to leave a human pawn rather then random which can be animals as pretty sure that'd cause issues
