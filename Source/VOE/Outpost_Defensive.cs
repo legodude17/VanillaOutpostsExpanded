@@ -18,14 +18,17 @@ namespace VOE
 
         [PostToSetings("Outposts.Settings.DoIntercept", PostToSetingsAttribute.DrawMode.Checkbox, true)]
         public bool DoIntercept = true;
+        [PostToSetings("Outposts.Settings.InterceptDifficultyMultiplier", PostToSetingsAttribute.DrawMode.Slider, 1f,0.1f,3f, "Outposts.Settings.InterceptDifficultyMultiplierTooltip")]
+        public float InterceptDifficultyMultiplier = 1f;
 
         [PostToSetings("Outposts.Settings.NeedPods", PostToSetingsAttribute.DrawMode.Checkbox, true)]
         public bool NeedPods = true;
         //Adding this to balance things a bit. I assume they get their own steel, but fuel could be a bit hard to get.
         [PostToSetings("Outposts.Settings.NeedFuel", PostToSetingsAttribute.DrawMode.Checkbox, false)]
-        public bool NeedFuel = true;
+        public bool NeedFuel = false;
         [PostToSetings("Outposts.Settings.NeedFuelAmount", PostToSetingsAttribute.DrawMode.IntSlider,100,min:1, max:500)]
         public int FuelAmount = 100;
+        
 
         public static bool DoRaid = false;
 
@@ -43,7 +46,7 @@ namespace VOE
             pawns.Where(p => p.RaceProps.Humanlike).Any(p => p.WorkTagIsDisabled(WorkTags.Violent) || p.equipment.Primary is null)
                 ? "Outposts.MustBeArmed".Translate()
                 : null;
-        public override float ResolveRaidPoints(IncidentParms parms, float rangeMin = 0.45F, float rangeMax = 0.65F) //Defense gets turrets sandbags and is where combat pawns go
+        public override float ResolveRaidPoints(IncidentParms parms, float rangeMin = 0.35F, float rangeMax = 0.45F) //Defense gets turrets sandbags and is where combat pawns go
         {
             return base.ResolveRaidPoints(parms, rangeMin, rangeMax);
         }
@@ -68,7 +71,7 @@ namespace VOE
         public void CanIntercept(IncidentParms parms, IncidentWorker_RaidEnemy raid)
         {
             float parmPoints = parms.points;//storing this because I want to generate with estimated points then set it back
-            parms.points = ResolveRaidPoints(parms, 0.75f, 1.00f);
+            parms.points = ResolveRaidPoints(parms, 0.4f, 0.50f)*InterceptDifficultyMultiplier;       
             var groupParms = IncidentParmsUtility.GetDefaultPawnGroupMakerParms(PawnGroupKindDefOf.Combat, parms, true);
             groupParms.generateFightersOnly = true;
             groupParms.dontUseSingleUseRocketLaunchers = true;
@@ -250,7 +253,8 @@ namespace VOE
                 alsoRemoveWorldObject = true;
                 return true;
             }
-            if (Map.mapPawns.AllPawns.Where(p => p.RaceProps.Humanlike || p.Faction == raidFaction).All(p => p.Faction is {IsPlayer: true} || p.HostFaction is { IsPlayer: true }))
+            var pawns = Map.mapPawns.AllPawns.ListFullCopy();
+            if (!pawns.Any(p => p.Faction == raidFaction && !p.Downed))
             {
                 
                 List<Pawn> mapPawns = Map.PlayerPawnsForStoryteller.ToList();
